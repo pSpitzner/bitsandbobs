@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2022-07-28 15:13:47
-# @Last Modified: 2022-07-29 11:48:40
+# @Last Modified: 2022-07-29 16:47:11
 # ------------------------------------------------------------------------------ #
 # Various tweaks for matplotlib
 # ------------------------------------------------------------------------------ #
@@ -18,6 +18,7 @@ import logging
 logging.basicConfig(format='%(asctime)s | %(name)-12s | %(levelname)-8s %(message)s',
                     datefmt='%y-%m-%d %H:%M')
 log = logging.getLogger(__name__)
+log.setLevel("DEBUG")
 
 _cm = 1 / 2.54
 
@@ -75,117 +76,46 @@ def load_fig_from_pickle(path):
     return fig
 
 
-# TODO: lets figure this out once and for all, with custom spacing in cm as border.
-def set_size(ax, w, h=None):
+def set_size(ax, w, h, b=1.5, l=2.0, t=0.3, r=0.3):
     """
-    set the size of an axis, where the size describes the actual area of the plot,
-    _excluding_ the axes, ticks, and labels.
+    Set the size of an axes element, and the precise whitespace around it.
+    Only works for figures with a single axes.
+    All sizes in centimeters.
 
-    w, h: width, height in cm
+    Recommended to call `fig.tight_layout()` before.
 
-    # Example
-    ```
-        cm = 2.54
-        fig, ax = plt.subplots()
-        ax.plot(stuff)
-        fig.tight_layout()
-        _set_size(ax, 3.5*cm, 4.5*cm)
-    ```
+    # Parameters
+    w, h : float
+        width and height of the axes element
+    b, l, t, r : float, optional
+        whitespace around the axes (where ticks etc are placed)
+        bottom, left, top and right
     """
-    # https://stackoverflow.com/questions/44970010/axes-class-set-explicitly-size-width-height-of-axes-in-given-units
-    l = ax.figure.subplotpars.left
-    r = ax.figure.subplotpars.right
-    t = ax.figure.subplotpars.top
-    b = ax.figure.subplotpars.bottom
-    figw = float(w / 2.54) / (r - l)
-    if h is None:
-        ax.figure.set_figwidth(figw)
-    else:
-        figh = float(h / 2.54) / (t - b)
-        ax.figure.set_size_inches(figw, figh)
-
-
-def set_size2(ax, w, h):
     # https://newbedev.com/axes-class-set-explicitly-size-width-height-of-axes-in-given-units
-    from mpl_toolkits.axes_grid1 import Divider, Size
 
-    axew = w / 2.54
-    axeh = h / 2.54
+    # we provide sizes in cm.
+    w *= _cm
+    h *= _cm
+    b *= _cm
+    l *= _cm
+    t *= _cm
+    r *= _cm
 
-    # lets use the tight layout function to get a good padding size for our axes labels.
-    # fig = plt.gcf()
-    # ax = plt.gca()
     fig = ax.get_figure()
-    fig.tight_layout()
 
-    # obtain the current ratio values for padding and fix size
-    oldw, oldh = fig.get_size_inches()
-    l = ax.figure.subplotpars.left
-    r = ax.figure.subplotpars.right
-    t = ax.figure.subplotpars.top
-    b = ax.figure.subplotpars.bottom
+    if len(fig.axes) > 1:
+        log.warning("Setting the size of figures with more than one ax is not supported")
 
-    # work out what the new  ratio values for padding are, and the new fig size.
-    neww = axew + oldw * (1 - r + l)
-    newh = axeh + oldh * (1 - t + b)
-    newr = r * oldw / neww
-    newl = l * oldw / neww
-    newt = t * oldh / newh
-    newb = b * oldh / newh
+    # x: left, width, right; and same for y
+    hori = [_Size.Scaled(l), _Size.Fixed(w), _Size.Scaled(r)]
+    vert = [_Size.Scaled(b), _Size.Fixed(h), _Size.Scaled(t)]
 
-    # right(top) padding, fixed axes size, left(bottom) pading
-    hori = [Size.Scaled(newr), Size.Fixed(axew), Size.Scaled(newl)]
-    vert = [Size.Scaled(newt), Size.Fixed(axeh), Size.Scaled(newb)]
 
-    divider = Divider(fig, (0.0, 0.0, 1.0, 1.0), hori, vert, aspect=False)
     # the width and height of the rectangle is ignored.
-
-    ax.set_axes_locator(divider.new_locator(nx=1, ny=1))
-
-    # we need to resize the figure now, as we have may have made our axes bigger than in.
-    fig.set_size_inches(neww, newh)
-
-
-def set_size3(ax, w, h):
-    # https://newbedev.com/axes-class-set-explicitly-size-width-height-of-axes-in-given-units
-    from mpl_toolkits.axes_grid1 import Divider, Size
-
-    axew = w * _cm
-    axeh = h * _cm
-
-    # lets use the tight layout function to get a good padding size for our axes labels.
-    # fig = plt.gcf()
-    # ax = plt.gca()
-    fig = ax.get_figure()
-    fig.tight_layout()
-    # obtain the current ratio values for padding and fix size
-    oldw, oldh = fig.get_size_inches()
-    l = ax.figure.subplotpars.left
-    r = ax.figure.subplotpars.right
-    t = ax.figure.subplotpars.top
-    b = ax.figure.subplotpars.bottom
-
-    # work out what the new  ratio values for padding are, and the new fig size.
-    # ps: adding a bit to neww and newh gives more padding
-    # the axis size is set from axew and axeh
-    neww = axew + oldw * (1 - r + l) + 0.4
-    newh = axeh + oldh * (1 - t + b) + 0.4
-    newr = r * oldw / neww - 0.4
-    newl = l * oldw / neww + 0.4
-    newt = t * oldh / newh - 0.4
-    newb = b * oldh / newh + 0.4
-
-    # right(top) padding, fixed axes size, left(bottom) pading
-    hori = [_Size.Scaled(newr), _Size.Fixed(axew), _Size.Scaled(newl)]
-    vert = [_Size.Scaled(newt), _Size.Fixed(axeh), _Size.Scaled(newb)]
-
     divider = _Divider(fig, (0.0, 0.0, 1.0, 1.0), hori, vert, aspect=False)
-    # the width and height of the rectangle is ignored.
-
     ax.set_axes_locator(divider.new_locator(nx=1, ny=1))
 
-    # we need to resize the figure now, as we have may have made our axes bigger than in.
-    fig.set_size_inches(neww, newh)
+    fig.set_size_inches(r+w+l, t+h+b)
 
 
 def detick(axis, keep_labels=False, keep_ticks=False):

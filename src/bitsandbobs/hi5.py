@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2020-07-21 11:11:40
-# @Last Modified: 2022-07-29 12:20:58
+# @Last Modified: 2022-08-02 14:30:02
 # ------------------------------------------------------------------------------ #
 # Helper functions to work conveniently with hdf5 files
 #
@@ -25,13 +25,16 @@ import h5py
 import numpy as np
 import logging
 
-logging.basicConfig(format='%(asctime)s | %(name)-12s | %(levelname)-8s %(message)s',
-                    datefmt='%y-%m-%d %H:%M')
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)-8s | %(name)-12s | %(message)s",
+    datefmt="%y-%m-%d %H:%M",
+)
 log = logging.getLogger(__name__)
 log.setLevel("DEBUG")
 
 try:
     from benedict import benedict
+
     _benedict_is_installed = True
 except ImportError:
     _benedict_is_installed = False
@@ -39,45 +42,58 @@ except ImportError:
 
 try:
     from addict import Dict
+
     _addict_is_installed = True
 except ImportError:
     _addict_is_installed = False
     log.debug("addict is not installed")
 
 
-
 def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
     """
-        load a h5 dset into an array. opens the h5 file and closes it
-        after reading.
+    load a h5 dset into an array. opens the h5 file and closes it
+    after reading.
 
-        # Parameters
-        filenames: str path to h5file(s).
-                   if wildcard given, result from globed files is returned
-        dsetname:  str, which dset to read
-        keepdim:   bool, per default arrays with 1 element will be mapped to scalars
-                   set this to `True` to keep them as arrays
-        raise_ex: whether to raise exceptions. default false,
-                  in this case, np.nan is returned if loading fails
-        silent:   if set to true, exceptions will not be reported
+    # Parameters
+    filenames: str path to h5file(s).
+               if wildcard given, result from globed files is returned
+    dsetname:  str, which dset to read
+    keepdim:   bool, per default arrays with 1 element will be mapped to scalars
+               set this to `True` to keep them as arrays
+    raise_ex:  whether to raise exceptions. default false,
+               in this case, np.nan is returned if loading fails
+    silent:    if set to true, exceptions will not be reported
 
-        # Returns
-        res: ndarray or scalar, depending on loaded datatype
+    # Returns
+    res: ndarray or scalar, depending on loaded datatype
     """
 
     def local_load(filename):
         try:
-            file = h5py.File(filename, "r")
-            res = file[dsetname]
-            # map 1 element arrays to scalars
-            if res.shape == (1,) and not keepdim:
-                res = res[0]
-            elif res.shape == ():
-                res = res[()]
-            else:
-                res = res[:]
-            file.close()
-            return res
+            with h5py.File(filename, "r") as file:
+                res = file[dsetname]
+
+                # decode strings
+                try:
+                    if res.dtype == np.object:
+                        res = res.asstr()
+                except:
+                    # `asstr()` only works on string objects, but there miight be others.
+                    pass
+
+                # map 1 element arrays to scalars
+                if res.shape == (1,) and not keepdim:
+                    # scalar was saved as length-1 array
+                    res = res[0]
+                elif res.shape == ():
+                    # scalar was saved as scalar
+                    res = res[()]
+                else:
+                    # normal array
+                    res = res[:]
+
+                return res
+
         except Exception as e:
             if not silent:
                 log.error(f"failed to load {dsetname} from {filename}: {e}")
@@ -87,36 +103,37 @@ def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
                 return np.nan
 
     files = glob.glob(os.path.expanduser(filenames))
-    res = []
+    results = []
     for f in files:
-        res.append(local_load(f))
+        results.append(local_load(f))
 
     if len(files) == 1:
-        return res[0]
+        return results[0]
     else:
-        return res
+        return results
 
 
 def ls(filename, groupname="/"):
     """
-        list the keys in a dsetname
+    list the keys in a dsetname
 
-        Parameters
-        ----------
-        filename: path to h5file
-        groupname: which dset to list
+    # Parameters
+    filename: path to h5file
+    groupname: which dset to list
 
-        Returns
-        -------
-        list: containing the contained keys as strings
+    # Returns
+    list: containing the contained keys as strings
     """
+
+    # TODO: reopening and closing the file for every ls might not be the most efficient.
+    # we could add a `ls_hot`` method.
+
     try:
-        file = h5py.File(os.path.expanduser(filename), "r")
-        try:
-            res = list(file[groupname].keys())
-        except Exception as e:
-            res = []
-        file.close()
+        with h5py.File(os.path.expanduser(filename), "r") as file:
+            try:
+                res = list(file[groupname].keys())
+            except Exception as e:
+                res = []
     except Exception as e:
         res = []
 
@@ -128,11 +145,12 @@ _h5_files_currently_open = dict(files=[], filenames=[])
 
 def load_hot(filename, dsetname, keepdim=False):
     """
-        sometimes we do not want to hold the whole dataset in RAM, because it is too
-        large. Remember to close the file after processing!
-
-        hmmm, two lists where indices have to match seem a bit fragile
+    sometimes we do not want to hold the whole dataset in RAM, because it is too
+    large. Remember to close the file after processing!
     """
+
+    # TODO: two lists where indices have to match seem a bit fragile
+
     global _h5_files_currently_open
     filename = os.path.expanduser(filename)
     if filename not in _h5_files_currently_open["filenames"]:
@@ -144,24 +162,39 @@ def load_hot(filename, dsetname, keepdim=False):
         file = _h5_files_currently_open["files"][idx]
 
     try:
-        # if its a xsingle value, load it even though this is 'hot'
+        # if its a single value, load it even though this is 'hot'
         if file[dsetname].shape == (1,) and not keepdim:
+            # scalar was saved as length-1 array
             return file[dsetname][0]
         elif file[dsetname].shape == ():
+            # scalar was saved as scalar
             return file[dsetname][()]
         else:
+            # normal array, do not load (omit the `[:]`)
             return file[dsetname]
     except Exception as e:
         log.error(f"Failed to load hot {filename} {dsetname}")
         raise e
 
+
 def close_hot(which="all"):
     """
-        hot files require a bit of care:
-        * If a BetterDict is opened from a hot hdf5 file, and `all` hot files are closed, the datasets are no longer accessible.
-        * from the outside, currently it is hard to check whether an element of a BeterDict is loaded
+    close all h5 files that were opened by this module.
+
+    # Parameters:
+    - which:
+        - "all" (default): close all files
+        - int: close the file with the given index, e.g. `-1` for the last file
+        - h5py.File: close from the given file handle
+
+    # Notes:
+    - hot files require a bit of care:
+    - If a dict is opened from a hot hdf5 file, and `all` hot files are closed,
+    the datasets are no longer accessible.
+    - from the outside, it is hard to check whether an element of a dict is loaded
     """
     global _h5_files_currently_open
+
     # everything we opened
     if which == "all":
         for file in _h5_files_currently_open["files"]:
@@ -171,6 +204,7 @@ def close_hot(which="all"):
                 log.debug("File already closed")
         _h5_files_currently_open["files"] = []
         _h5_files_currently_open["filenames"] = []
+
     # by index
     elif isinstance(which, int):
         del _h5_files_currently_open["files"][which]
@@ -179,6 +213,7 @@ def close_hot(which="all"):
             _h5_files_currently_open["files"][which].close()
         except:
             log.debug("File already closed")
+
     # by passed hdf5 file handle
     elif isinstance(which, h5py.File):
         _h5_files_currently_open["files"].remove(which)
@@ -188,8 +223,11 @@ def close_hot(which="all"):
         except:
             log.debug("File already closed")
 
-def remember_file_is_hot(file):
-    # helper to keep a collection of open files
+
+def _remember_file_is_hot(file):
+    """
+    helper to keep a collection of open files
+    """
     global _h5_files_currently_open
     _h5_files_currently_open["files"].append(file)
     _h5_files_currently_open["filenames"].append(file.filename)
@@ -197,8 +235,8 @@ def remember_file_is_hot(file):
 
 def recursive_ls(filename, groupname="/"):
     """
-    Lists all paths within a h5 file, starting at dsetname.
-    the returned paths _do not_ include the path up to `dsetname`.
+    Lists all paths within a h5 file, starting at groupname.
+    the returned paths _do not_ include the path up to `groupname`.
     """
 
     # below we assume dsetname as parent node to end with `/`
@@ -218,33 +256,37 @@ def recursive_ls(filename, groupname="/"):
     return res
 
 
-def recursive_load(filename, groupname="/", skip=None, hot=False, keepdim=False, dtype = None):
+def recursive_load(
+    filename, groupname="/", skip=None, hot=False, keepdim=False, dtype=None
+):
     """
-        Load a hdf5 file as a nested dict.
-        enhenced dicts via benedict or addict are supported via `dtype` argument
+    Load a hdf5 file as a nested dict.
+    enhenced dicts via benedict or addict are supported via `dtype` argument
 
-        # Paramters:
-        filename : str
-            path to h5 file
-        groupname : str
-            where to start loading. think level below which all dsets are loaded.
-        skip : list
-            names of dsets to exclude
-        hot : bool
-            if True, does not load dsets to ram, but only links to the hdf5 file. this keeps the file open, call `close_hot()` when done!
-            Use this if a dataset in your file is ... big
-        keepdim : set to true to preserve original data-set shape for 1d arrays
-            instead of casting to numbers
-        dtype : str, dtype or None
-            which dictionary class to use. Default, None uses a normal dict,
-            "benedict" or "addict" use those types,
-            if a type is passed, it is assumed to be a subclass of a normal dict and will be called as the constructor
+    # Paramters:
+    filename : str
+        path to h5 file
+    groupname : str
+        where to start loading. think level below which all dsets are loaded.
+    skip : list
+        names of dsets to exclude
+    hot : bool
+        if True, does not load dsets to ram, but only links to the hdf5 file.
+        this keeps the file open, call `close_hot()` when done!
+        Use this if a dataset in your file is ... big
+    keepdim : set to true to preserve original data-set shape for 1d arrays
+        instead of casting to numbers
+    dtype : str, dtype or None
+        which dictionary class to use. Default, None uses a normal dict,
+        "benedict" or "addict" use those types,
+        if a type is passed, it is assumed to be a subclass of a normal dict
+        and will be called as the constructor
 
-        # Returns:
-        dict : nested dict-like of the requested `dtype`
-            always contains a `h5` key that holds details about the hdf5 file.
-            Note that this is always at the toplevel of the returned dict, even when
-            providing a groupname.
+    # Returns:
+    _ : nested dict-like of the requested `dtype`
+        always contains a `h5` key that holds details about the hdf5 file.
+        Note that this is always at the toplevel of the returned dict, even when
+        providing a groupname.
     """
 
     if dtype is None:
@@ -271,6 +313,7 @@ def recursive_load(filename, groupname="/", skip=None, hot=False, keepdim=False,
     assert isinstance(keepdim, bool)
     assert isinstance(groupname, str)
     assert isinstance(filename, str)
+    filename = os.path.expanduser(filename)
 
     # below we assume dsetname as parent node to end with `/`
     try:
@@ -288,10 +331,10 @@ def recursive_load(filename, groupname="/", skip=None, hot=False, keepdim=False,
     res["h5"]["filename"] = filename
     res["h5"]["dsetname"] = groupname
     if hot:
-        f = h5py.File(filename, "r")
+        f = h5py.File(os.path.expanduser(filename), "r")
         # res._set_h5_file(f)
         res["h5"]["file"] = f
-        remember_file_is_hot(f)
+        _remember_file_is_hot(f)
 
     # track the number of levels for each paths
     path_lengths = []
@@ -339,30 +382,33 @@ def recursive_load(filename, groupname="/", skip=None, hot=False, keepdim=False,
 
 def recursive_write(filename, h5_data, h5_desc=None, **kwargs):
     """
-        Write nested dictionaries to hdf5 files.
-        Completely overwrites the file at `filename`, purging all previous content.
+    Write nested dictionaries to hdf5 files.
 
-        Needs python-benedict.
-        Dict keys cannot contain "." or "/" characters.
+    # Notes:
+    - Completely overwrites the file at `filename`, purging all previous content.
+    - Dict keys cannot contain "." or "/" characters.
+    - Currently relies on benedict. `pip install python-benedict`
+    - Does not write subgroups of reserved keypath "/h5/"
+    - Attempts to write nested lists, inferring the data type. Tricky, try to avoid!
+    - __Do not assume__ that written and re-read data via `recursive_load` will always
+    match. Key order and data types might differ, and some special keys might not
+    get stored at all.
 
-        Does not write subgroups of reserved keypath "/h5/"
+    # Paramters
+    filename : str
+        path to (over) write the file to
+    h5_data : nested dictionaries
+        a dataset is created at each lowest level of the tree
+    h5_desc : nested dict
+        matching structure of `h5_data`, containing descriptions that will be set
+        as the 'description' attribute of the hdf5 dataset.
+        Note: we cannot set descriptions for groups, as parents (groups)
+        always correspond to a dict themselves
+    **kwargs :
+        are passed to `file.create_dataset()`, keys for compression set by default.
 
-        todo: workaround for list of strings, list of tuples etc
-        todo: consistency checks between re-loaded an original data.
-            due to differing dtypes, so far, this is not ensured.
-
-        # Paramters
-        filename : str
-            path to (over) write the file to
-        h5_data : nested dictionaries
-            a dataset is created at each lowest level of the tree
-        h5_desc : nested dict
-            matching structure of `h5_data`, containing descriptions that will be set
-            as the 'desc' attribute of the hdf5 dataset.
-            Note: we cannot set descriptions for groups, as parents (groups)
-            always correspond to a dict themselves
-        **kwargs :
-            are passed to `file.create_dataset()`, keys for compression set by default.
+    # Todo: consistency checks between re-loaded an original data.
+        due to differing dtypes, so far, this is not ensured.
     """
 
     from benedict import benedict
@@ -370,66 +416,99 @@ def recursive_write(filename, h5_data, h5_desc=None, **kwargs):
     if h5_desc is None:
         h5_desc = dict()
 
-    h5_data = benedict(h5_data, keypath_separator='/')
-    h5_desc = benedict(h5_desc, keypath_separator='/')
+    h5_data = benedict(h5_data, keypath_separator="/")
+    h5_desc = benedict(h5_desc, keypath_separator="/")
 
-    file = h5py.File(filename, "w")
+    with h5py.File(os.path.expanduser(filename), "w") as file:
 
-    for key in h5_data.keypaths():
-        try:
-            if key[0:2] == "h5":
-                continue
-        except:
-            pass
+        # keypaths() yields all levels, dicts -> groups and leaves -> datasets
+        for key in h5_data.keypaths():
+            log.debug(f"{key}")
 
-        key_kwargs = kwargs.copy()
-        if isinstance(h5_data[key], dict):
-            target = file.require_group(f"/{key}")
-        else:
-            data = h5_data[key]
-            key_kwargs.setdefault("data", data)
-            key_kwargs.setdefault("compression", "gzip")
-
-            # scalars, and strings do not support compression
             try:
-                d_len = len(data)
-                if isinstance(data, str):
-                    raise TypeError
-                if isinstance(data, np.bytes_):
-                    raise TypeError
-            except TypeError:
-                key_kwargs.pop("compression")
+                if key[0:2] == "h5":
+                    continue
+            except:
+                pass
 
-            # print(f"{key} {type(data)}")
-            # print(key_kwargs)
-            # print(h5_data[key])
-            try:
-                target = file.create_dataset(f"/{key}", **key_kwargs)
-            except Exception as e:
-                log.error(f"key `{key}`: {data}")
-                log.error(f"{e}")
+            key_kwargs = kwargs.copy()
+            if isinstance(h5_data[key], dict):
+                log.debug(f"   is group")
+                target = file.require_group(f"/{key}")
+            else:
+                # prepare the kwargs depending on the type of the data
+                data = h5_data[key]
+                key_kwargs.setdefault("data", data)
+                key_kwargs.setdefault("compression", "gzip")
 
-        # try:
-        #     target.attrs["description"] = h5_desc[key]
-        # except:
-        #     # no description specified for this key
-        #     pass
+                # scalars and strings do not support compression
+                try:
+                    d_len = len(data)
+                    if isinstance(data, (str, bytes, np.bytes_)):
+                        raise TypeError
+                except TypeError:
+                    log.debug(f"   is scalar, string, or bytes")
+                    key_kwargs.pop("compression")
 
-    file.close()
+                # lists may need some special treatmeant
+                # https://docs.h5py.org/en/stable/special.html
+                if isinstance(data, list) and len(data) > 0:
 
+                    # list of strings
+                    if isinstance(data[0], str):
+                        log.debug(f"   is list of strings")
+                        # h5py will complain when dtypes within the list vary,
+                        # so no need to raise an error for inconsistent elements.
+                        key_kwargs["dtype"] = h5py.string_dtype(encoding="utf-8")
+                        target = file.create_dataset(f"/{key}", **key_kwargs)
 
+                    else:
+                        # nested lists:
+                        try:
+                            # we manually iterate over the list so h5py can cast,
+                            # and only help by checking dtype of the first element
+                            # arrays, tuples, lists, all have a length.
+                            len(data[0])
 
-# def _check_for_string(data):
-    # workaround to store a list of strings (via object array) to hdf5
-    # dset = f_tar.create_dataset(
-    #     "/meta/axis_overview",
-    #     data=np.array(list(d_axes.keys()) + ["repetition"], dtype=object),
-    #     dtype=h5py.special_dtype(vlen=str),
-    # )
+                            dtype = None
+                            idx = 0
+                            while dtype is None:
+                                try:
+                                    dtype = type(data[idx][0])
+                                except IndexError:
+                                    dtype = None
+                                    idx += 1
 
+                            log.debug(f"   is nested list of type {dtype}")
+                            assert (
+                                dtype is not str
+                            ), "Nested lists of strings are not supported"
 
-# for key in h5f.keypaths():
-#     try:
-#         print(f"{key} {np.all(h5f[key] == h5f2[key])}")
-#     except Exception as e:
-#         print(f"{key} {e}")
+                            key_kwargs["dtype"] = h5py.vlen_dtype(dtype)
+
+                            # manually set data
+                            key_kwargs.pop("data")
+                            target = file.create_dataset(
+                                f"/{key}", (len(data),), **key_kwargs
+                            )
+                            for idx, d in enumerate(data):
+                                target[idx] = d
+
+                        # flat lists:
+                        except TypeError:
+                            log.debug(f"   is flat list")
+                            target = file.create_dataset(f"/{key}", **key_kwargs)
+
+                # default, easy data types
+                else:
+                    log.debug(f"   is standard type")
+                    try:
+                        target = file.create_dataset(f"/{key}", **key_kwargs)
+                    except Exception as e:
+                        log.error(f"Skipping key {key}, {data}, {e}")
+
+                try:
+                    target.attrs["description"] = h5_desc[key]
+                except:
+                    # no description specified for this key
+                    pass

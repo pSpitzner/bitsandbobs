@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2022-07-28 15:13:47
-# @Last Modified: 2022-07-29 16:47:11
+# @Last Modified: 2022-08-08 18:04:14
 # ------------------------------------------------------------------------------ #
 # Various tweaks for matplotlib
 # ------------------------------------------------------------------------------ #
@@ -138,7 +138,7 @@ def detick(axis, keep_labels=False, keep_ticks=False):
     ```
     """
 
-    raise NotImplementedError("Depricated, use `ax.tick_params` instead.")
+    log.warning("`detick()` is deprecated. Really, `ax.tick_params` has all you need.")
 
     # Only keeping this for references
     if not isinstance(axis, list):

@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2022-07-28 15:13:47
-# @Last Modified: 2022-08-08 18:04:14
+# @Last Modified: 2022-08-08 18:06:47
 # ------------------------------------------------------------------------------ #
 # Various tweaks for matplotlib
 # ------------------------------------------------------------------------------ #
@@ -18,7 +18,7 @@ import logging
 logging.basicConfig(format='%(asctime)s | %(name)-12s | %(levelname)-8s %(message)s',
                     datefmt='%y-%m-%d %H:%M')
 log = logging.getLogger(__name__)
-log.setLevel("DEBUG")
+# log.setLevel("DEBUG")
 
 _cm = 1 / 2.54
 

@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2020-07-21 11:11:40
-# @Last Modified: 2022-08-08 18:06:57
+# @Last Modified: 2022-08-08 18:24:48
 # ------------------------------------------------------------------------------ #
 # Helper functions to work conveniently with hdf5 files
 #
@@ -76,9 +76,9 @@ def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
                 # decode strings
                 try:
                     if res.dtype == np.object:
-                        res = res.asstr()
+                        res = res.asstr()[:]
                 except:
-                    # `asstr()` only works on string objects, but there miight be others.
+                    # `asstr()` only works on string objects, but there might be others.
                     pass
 
                 # map 1 element arrays to scalars

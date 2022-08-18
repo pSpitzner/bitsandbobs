@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2020-07-21 11:11:40
-# @Last Modified: 2022-08-08 18:24:48
+# @Last Modified: 2022-08-18 13:16:02
 # ------------------------------------------------------------------------------ #
 # Helper functions to work conveniently with hdf5 files
 #
@@ -49,6 +49,13 @@ except ImportError:
     log.debug("addict is not installed")
 
 
+# if we are using an old version of h5py, SWMR might not be available
+_read_kwargs = dict()
+if h5py.version.hdf5_version_tuple >= (1,9,178):
+    _read_kwargs["swmr"] = True
+    _read_kwargs["libver"] = "latest"
+
+
 def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
     """
     load a h5 dset into an array. opens the h5 file and closes it
@@ -70,7 +77,7 @@ def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
 
     def local_load(filename):
         try:
-            with h5py.File(filename, "r") as file:
+            with h5py.File(filename, "r", **_read_kwargs) as file:
                 res = file[dsetname]
 
                 # decode strings
@@ -129,7 +136,7 @@ def ls(filename, groupname="/"):
     # we could add a `ls_hot`` method.
 
     try:
-        with h5py.File(os.path.expanduser(filename), "r") as file:
+        with h5py.File(os.path.expanduser(filename), "r", **_read_kwargs) as file:
             try:
                 res = list(file[groupname].keys())
             except Exception as e:
@@ -154,7 +161,7 @@ def load_hot(filename, dsetname, keepdim=False):
     global _h5_files_currently_open
     filename = os.path.expanduser(filename)
     if filename not in _h5_files_currently_open["filenames"]:
-        file = h5py.File(filename, "r")
+        file = h5py.File(filename, "r", **_read_kwargs)
         _h5_files_currently_open["files"].append(file)
         _h5_files_currently_open["filenames"].append(filename)
     else:
@@ -314,6 +321,7 @@ def recursive_load(
     assert isinstance(groupname, str)
     assert isinstance(filename, str)
     filename = os.path.expanduser(filename)
+    log.debug(f"Loading h5 file: {os.path.abspath(filename)}")
 
     # below we assume dsetname as parent node to end with `/`
     try:
@@ -331,7 +339,7 @@ def recursive_load(
     res["h5"]["filename"] = filename
     res["h5"]["dsetname"] = groupname
     if hot:
-        f = h5py.File(os.path.expanduser(filename), "r")
+        f = h5py.File(os.path.expanduser(filename), "r", **_read_kwargs)
         # res._set_h5_file(f)
         res["h5"]["file"] = f
         _remember_file_is_hot(f)
@@ -419,7 +427,18 @@ def recursive_write(filename, h5_data, h5_desc=None, **kwargs):
     h5_data = benedict(h5_data, keypath_separator="/")
     h5_desc = benedict(h5_desc, keypath_separator="/")
 
-    with h5py.File(os.path.expanduser(filename), "w") as file:
+    with h5py.File(os.path.expanduser(filename), "w", libver="latest") as file:
+
+        # A file which is being written to in Single-Write-Multliple-Read (swmr) mode
+        # is guaranteed to always be in a valid (non-corrupt) state for reading.
+        # This has the added benefit of leaving a file in a valid state even if
+        # the writing application crashes before closing the file properly.
+        # assert h5py.version.hdf5_version_tuple >= (1,9,178), "SWMR requires HDF5 version >= 1.9.178"
+        if h5py.version.hdf5_version_tuple >= (1, 9, 178):
+            file.swmr_mode = True
+            log.debug("using swmr mode")
+        else:
+            log.debug("SWMR requires HDF5 version >= 1.9.178")
 
         # keypaths() yields all levels, dicts -> groups and leaves -> datasets
         for key in h5_data.keypaths():

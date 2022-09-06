@@ -2,7 +2,7 @@
 # @Author:        F. Paul Spitzner
 # @Email:         paul.spitzner@ds.mpg.de
 # @Created:       2020-07-21 11:11:40
-# @Last Modified: 2022-08-18 13:16:02
+# @Last Modified: 2022-09-06 14:36:42
 # ------------------------------------------------------------------------------ #
 # Helper functions to work conveniently with hdf5 files
 #
@@ -51,7 +51,7 @@ except ImportError:
 
 # if we are using an old version of h5py, SWMR might not be available
 _read_kwargs = dict()
-if h5py.version.hdf5_version_tuple >= (1,9,178):
+if h5py.version.hdf5_version_tuple >= (1, 9, 178):
     _read_kwargs["swmr"] = True
     _read_kwargs["libver"] = "latest"
 
@@ -79,6 +79,9 @@ def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
         try:
             with h5py.File(filename, "r", **_read_kwargs) as file:
                 res = file[dsetname]
+
+                if isinstance(res, h5py.Group):
+                    raise ValueError(f"{dsetname} is a group. Provide path to a dset!")
 
                 # decode strings
                 try:
@@ -112,6 +115,8 @@ def load(filenames, dsetname, keepdim=False, raise_ex=False, silent=False):
     files = glob.glob(os.path.expanduser(filenames))
     results = []
     for f in files:
+        if not os.path.isfile(f):
+            log.warning(f"{f} is not a file")
         results.append(local_load(f))
 
     if len(files) == 1:
@@ -321,6 +326,7 @@ def recursive_load(
     assert isinstance(groupname, str)
     assert isinstance(filename, str)
     filename = os.path.expanduser(filename)
+    assert os.path.isfile(filename), f"is the filename correct?"
     log.debug(f"Loading h5 file: {os.path.abspath(filename)}")
 
     # below we assume dsetname as parent node to end with `/`
